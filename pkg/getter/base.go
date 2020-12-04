@@ -11,7 +11,8 @@ import (
 // functions for getters
 type Getter interface {
 	Get() proxy.ProxyList
-	Get2Chan(pc chan proxy.Proxy, wg *sync.WaitGroup)
+	Get2Chan(pc chan proxy.Proxy)
+	Get2ChanWG(pc chan proxy.Proxy, wg *sync.WaitGroup)
 }
 
 // function type that creates getters
@@ -37,6 +38,17 @@ func StringArray2ProxyArray(origin []string) proxy.ProxyList {
 	results := make(proxy.ProxyList, 0)
 	for _, link := range origin {
 		p, err := proxy.ParseProxyFromLink(link)
+		if err == nil && p != nil {
+			results = append(results, p)
+		}
+	}
+	return results
+}
+
+func ClashProxy2ProxyArray(origin []map[string]interface{}) proxy.ProxyList {
+	results := make(proxy.ProxyList, 0, len(origin))
+	for _, pjson := range origin {
+		p, err := proxy.ParseProxyFromClashProxy(pjson)
 		if err == nil && p != nil {
 			results = append(results, p)
 		}

@@ -2,9 +2,8 @@ package api
 
 import (
 	binhtml "github.com/Sansui233/proxypool/internal/bindata/html"
+	"github.com/Sansui233/proxypool/log"
 	"html/template"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -12,7 +11,7 @@ import (
 	"time"
 
 	"github.com/Sansui233/proxypool/config"
-	C "github.com/Sansui233/proxypool/internal/cache"
+	appcache "github.com/Sansui233/proxypool/internal/cache"
 	"github.com/Sansui233/proxypool/pkg/provider"
 	"github.com/gin-contrib/cache"
 	"github.com/gin-contrib/cache/persistence"
@@ -20,7 +19,7 @@ import (
 	_ "github.com/heroku/x/hmetrics/onload"
 )
 
-const version = "v0.3.10"
+const version = "v0.5.2"
 
 var router *gin.Engine
 
@@ -44,14 +43,15 @@ func setupRouter() {
 	router.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "assets/html/index.html", gin.H{
 			"domain":               config.Config.Domain,
-			"getters_count":        C.GettersCount,
-			"all_proxies_count":    C.AllProxiesCount,
-			"ss_proxies_count":     C.SSProxiesCount,
-			"ssr_proxies_count":    C.SSRProxiesCount,
-			"vmess_proxies_count":  C.VmessProxiesCount,
-			"trojan_proxies_count": C.TrojanProxiesCount,
-			"useful_proxies_count": C.UsefullProxiesCount,
-			"last_crawl_time":      C.LastCrawlTime,
+			"getters_count":        appcache.GettersCount,
+			"all_proxies_count":    appcache.AllProxiesCount,
+			"ss_proxies_count":     appcache.SSProxiesCount,
+			"ssr_proxies_count":    appcache.SSRProxiesCount,
+			"vmess_proxies_count":  appcache.VmessProxiesCount,
+			"trojan_proxies_count": appcache.TrojanProxiesCount,
+			"useful_proxies_count": appcache.UsefullProxiesCount,
+			"last_crawl_time":      appcache.LastCrawlTime,
+			"is_speed_test":        appcache.IsSpeedTest,
 			"version":              version,
 		})
 	})
@@ -59,6 +59,7 @@ func setupRouter() {
 	router.GET("/clash", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "assets/html/clash.html", gin.H{
 			"domain": config.Config.Domain,
+			"port":   config.Config.Port,
 		})
 	})
 
@@ -74,7 +75,9 @@ func setupRouter() {
 		})
 	})
 	router.GET("/clash/localconfig", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "assets/html/clash-config-local.yaml", gin.H{})
+		c.HTML(http.StatusOK, "assets/html/clash-config-local.yaml", gin.H{
+			"port": config.Config.Port,
+		})
 	})
 
 	router.GET("/surge/config", func(c *gin.Context) {
@@ -87,38 +90,41 @@ func setupRouter() {
 		proxyTypes := c.DefaultQuery("type", "")
 		proxyCountry := c.DefaultQuery("c", "")
 		proxyNotCountry := c.DefaultQuery("nc", "")
+		proxySpeed := c.DefaultQuery("speed", "")
 		text := ""
-		if proxyTypes == "" && proxyCountry == "" && proxyNotCountry == "" {
-			text = C.GetString("clashproxies")
+		if proxyTypes == "" && proxyCountry == "" && proxyNotCountry == "" && proxySpeed == "" {
+			text = appcache.GetString("clashproxies") // A string. To show speed in this if condition, this must be updated after speedtest
 			if text == "" {
-				proxies := C.GetProxies("proxies")
+				proxies := appcache.GetProxies("proxies")
 				clash := provider.Clash{
-					provider.Base{
+					Base: provider.Base{
 						Proxies: &proxies,
 					},
 				}
 				text = clash.Provide() // 根据Query筛选节点
-				C.SetString("clashproxies", text)
+				appcache.SetString("clashproxies", text)
 			}
 		} else if proxyTypes == "all" {
-			proxies := C.GetProxies("allproxies")
+			proxies := appcache.GetProxies("allproxies")
 			clash := provider.Clash{
 				provider.Base{
 					Proxies:    &proxies,
 					Types:      proxyTypes,
 					Country:    proxyCountry,
 					NotCountry: proxyNotCountry,
+					Speed:      proxySpeed,
 				},
 			}
 			text = clash.Provide() // 根据Query筛选节点
 		} else {
-			proxies := C.GetProxies("proxies")
+			proxies := appcache.GetProxies("proxies")
 			clash := provider.Clash{
 				provider.Base{
 					Proxies:    &proxies,
 					Types:      proxyTypes,
 					Country:    proxyCountry,
 					NotCountry: proxyNotCountry,
+					Speed:      proxySpeed,
 				},
 			}
 			text = clash.Provide() // 根据Query筛选节点
@@ -129,34 +135,36 @@ func setupRouter() {
 		proxyTypes := c.DefaultQuery("type", "")
 		proxyCountry := c.DefaultQuery("c", "")
 		proxyNotCountry := c.DefaultQuery("nc", "")
+		proxySpeed := c.DefaultQuery("speed", "")
 		text := ""
-		if proxyTypes == "" && proxyCountry == "" && proxyNotCountry == "" {
-			text = C.GetString("surgeproxies")
+		if proxyTypes == "" && proxyCountry == "" && proxyNotCountry == "" && proxySpeed == "" {
+			text = appcache.GetString("surgeproxies") // A string. To show speed in this if condition, this must be updated after speedtest
 			if text == "" {
-				proxies := C.GetProxies("proxies")
+				proxies := appcache.GetProxies("proxies")
 				surge := provider.Surge{
-					provider.Base{
+					Base: provider.Base{
 						Proxies: &proxies,
 					},
 				}
 				text = surge.Provide()
-				C.SetString("surgeproxies", text)
+				appcache.SetString("surgeproxies", text)
 			}
 		} else if proxyTypes == "all" {
-			proxies := C.GetProxies("allproxies")
+			proxies := appcache.GetProxies("allproxies")
 			surge := provider.Surge{
-				provider.Base{
+				Base: provider.Base{
 					Proxies:    &proxies,
 					Types:      proxyTypes,
 					Country:    proxyCountry,
 					NotCountry: proxyNotCountry,
+					Speed:      proxySpeed,
 				},
 			}
 			text = surge.Provide()
 		} else {
-			proxies := C.GetProxies("proxies")
+			proxies := appcache.GetProxies("proxies")
 			surge := provider.Surge{
-				provider.Base{
+				Base: provider.Base{
 					Proxies:    &proxies,
 					Types:      proxyTypes,
 					Country:    proxyCountry,
@@ -169,9 +177,9 @@ func setupRouter() {
 	})
 
 	router.GET("/ss/sub", func(c *gin.Context) {
-		proxies := C.GetProxies("proxies")
+		proxies := appcache.GetProxies("proxies")
 		ssSub := provider.SSSub{
-			provider.Base{
+			Base: provider.Base{
 				Proxies: &proxies,
 				Types:   "ss",
 			},
@@ -179,9 +187,9 @@ func setupRouter() {
 		c.String(200, ssSub.Provide())
 	})
 	router.GET("/ssr/sub", func(c *gin.Context) {
-		proxies := C.GetProxies("proxies")
+		proxies := appcache.GetProxies("proxies")
 		ssrSub := provider.SSRSub{
-			provider.Base{
+			Base: provider.Base{
 				Proxies: &proxies,
 				Types:   "ssr",
 			},
@@ -189,9 +197,9 @@ func setupRouter() {
 		c.String(200, ssrSub.Provide())
 	})
 	router.GET("/vmess/sub", func(c *gin.Context) {
-		proxies := C.GetProxies("proxies")
+		proxies := appcache.GetProxies("proxies")
 		vmessSub := provider.VmessSub{
-			provider.Base{
+			Base: provider.Base{
 				Proxies: &proxies,
 				Types:   "vmess",
 			},
@@ -199,18 +207,28 @@ func setupRouter() {
 		c.String(200, vmessSub.Provide())
 	})
 	router.GET("/sip002/sub", func(c *gin.Context) {
-		proxies := C.GetProxies("proxies")
+		proxies := appcache.GetProxies("proxies")
 		sip002Sub := provider.SIP002Sub{
-			provider.Base{
+			Base: provider.Base{
 				Proxies: &proxies,
 				Types:   "ss",
 			},
 		}
 		c.String(200, sip002Sub.Provide())
 	})
+	router.GET("/trojan/sub", func(c *gin.Context) {
+		proxies := appcache.GetProxies("proxies")
+		trojanSub := provider.TrojanSub{
+			Base: provider.Base{
+				Proxies: &proxies,
+				Types:   "trojan",
+			},
+		}
+		c.String(200, trojanSub.Provide())
+	})
 	router.GET("/link/:id", func(c *gin.Context) {
 		idx := c.Param("id")
-		proxies := C.GetProxies("allproxies")
+		proxies := appcache.GetProxies("allproxies")
 		id, err := strconv.Atoi(idx)
 		if err != nil {
 			c.String(500, err.Error())
@@ -224,16 +242,18 @@ func setupRouter() {
 
 func Run() {
 	setupRouter()
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	servePort := config.Config.Port
+	envp := os.Getenv("PORT") // environment port for heroku app
+	if envp != "" {
+		servePort = envp
 	}
 	// Run on this server
-	err := router.Run(":" + port)
+	err := router.Run(":" + servePort)
 	if err != nil {
-		log.Fatal("[router.go] Remote server starting failed")
+		log.Errorln("router: Web server starting failed. Make sure your port %s has not been used. \n%s", servePort, err.Error())
+	} else {
+		log.Infoln("Proxypool is serving on port: %s", servePort)
 	}
-
 }
 
 // 返回页面templates
@@ -243,26 +263,11 @@ func loadHTMLTemplate() (t *template.Template, err error) {
 		if strings.Contains(fileName, "css") {
 			continue
 		}
-		data := binhtml.MustAsset(fileName)          // 读取页面数据
+		data := binhtml.MustAsset(fileName)          //读取页面数据
 		t, err = t.New(fileName).Parse(string(data)) //生成带路径名称的模板
 		if err != nil {
 			return nil, err
 		}
 	}
 	return t, nil
-}
-
-// Get all files' full relative paths recursively TODO: This function shouldn't be here
-// 静态模板文件批处理时使用
-func GetAllFilePaths(pathname string) (filenames []string, err error) {
-	rd, err := ioutil.ReadDir(pathname)
-	for _, fi := range rd {
-		if fi.IsDir() {
-			GetAllFilePaths(pathname + string(os.PathSeparator) + fi.Name())
-		} else {
-			filename := pathname + string(os.PathSeparator) + fi.Name()
-			filenames = append(filenames, filename)
-		}
-	}
-	return filenames, err
 }

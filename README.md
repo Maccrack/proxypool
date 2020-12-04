@@ -25,8 +25,8 @@
 - 定时抓取自动更新
 - 通过配置文件设置抓取源
 - 自动检测节点可用性
-- 提供clash\surge配置文件
-- 提供ss\ssr\vmess\sip002订阅
+- 提供clash、surge配置文件
+- 提供ss、ssr、vmess、sip002订阅
 
 ## 安装
 
@@ -38,21 +38,18 @@
 
 其中 `DOMAIN` 需要填写为你需要绑定的域名，`CONFIG_FILE` 需要填写你的配置文件路径。
 
-配置文件模板见 config/config.yaml 文件
+> heroku app域名为appname.herokuapp.com。项目内配置文件为./config/config.yaml
 
-`CF` 开头的选项暂不需要填写，不影响程序运行
+配置文件模板见 config/config.yaml 文件，可选项区域均可不填。完整配置选项请查看[配置文件说明](https://github.com/Sansui233/proxypool/wiki/%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6%E8%AF%B4%E6%98%8E)。
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
 
 > 因为爬虫程序需要持续运行，所以至少选择 $7/月 的配置
 > 免费配置长时间无人访问会被heroku强制停止
 
-数据库使用的是PostgreSQL, 如果使用heroku只需要添加一个Addon，如果是自托管需要自己进行安装
-
 ### 从源码编译
 
-需要安装Golang
-> Golang需要使用国内镜像，原站的某些package已迁移。  
+需要安装Golang 
 
 ```sh
 $ go get -u -v github.com/Sansui233/proxypool
@@ -70,7 +67,7 @@ make
 
 ### 下载预编译程序
 
-从这里下载预编译好的程序 [release](https://github.com/Sansui233/proxypool/releases)
+从这里下载预编译好的程序 [release](https://github.com/Sansui233/proxypool/releases)。
 
 ### 使用docker
 
@@ -84,9 +81,7 @@ docker pull docker.pkg.github.com/Sansui233/proxypool/proxypool:latest
 
 ### 修改配置文件
 
-首先修改 config.yaml 中的必要配置信息，cf开头的选项不需要填写
-
-source.yaml 文件中定义了抓取源，需要定期手动维护更新
+首先修改 config.yaml 中的必要配置信息。带有默认值的字段均可不填写。完整的配置选项见[配置文件说明](https://github.com/Sansui233/proxypool/wiki/%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6%E8%AF%B4%E6%98%8E)
 
 ### 启动程序
 
@@ -96,11 +91,17 @@ source.yaml 文件中定义了抓取源，需要定期手动维护更新
 proxypool -c ./config/config.yaml
 ```
 
+如果需要部署到VPS，更多细节请[查看wiki](https://github.com/Sansui233/proxypool/wiki/%E9%83%A8%E7%BD%B2%E5%88%B0VPS-Step-by-Step)。
+
 ## Clash配置文件
 
 远程部署时Clash配置文件访问：https://domain/clash/config
 
-本地运行时Clash配置文件访问：http://127.0.0.1:8080/clash/localconfig
+本地运行时Clash配置文件访问：http://127.0.0.1:[端口]/clash/localconfig
+
+## 本地检查节点可用性
+
+此项非必须。为了提高实际可用性，可选择增加一个本地服务器，检测远程proxypool节点在本地的可用性并提供配置，见[proxypoolCheck](https://github.com/Sansui233/proxypoolCheck)。
 
 ## 截图
 

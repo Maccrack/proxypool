@@ -1,7 +1,9 @@
 package app
 
 import (
-	"log"
+	"github.com/Sansui233/proxypool/config"
+	"github.com/Sansui233/proxypool/log"
+	"github.com/Sansui233/proxypool/pkg/healthcheck"
 	"sync"
 	"time"
 
@@ -18,70 +20,120 @@ func CrawlGo() {
 	var pc = make(chan proxy.Proxy)
 	for _, g := range Getters {
 		wg.Add(1)
-		// 并发执行抓取node并存到pc
-		go g.Get2Chan(pc, wg)
+		go g.Get2ChanWG(pc, wg)
 	}
-	// 获取go中缓存的所有proxylist（包括不可用的）
 	proxies := cache.GetProxies("allproxies")
-	// 获取database中的proxylist
-	proxies = append(proxies, database.GetAllProxies()...)
+	dbProxies := database.GetAllProxies()
+	// Show last time result when launch
+	if proxies == nil && dbProxies != nil {
+		cache.SetProxies("proxies", dbProxies)
+		cache.LastCrawlTime = "抓取中，已载入上次数据库数据"
+		log.Infoln("Database: loaded")
+	}
+	if dbProxies != nil {
+		proxies = dbProxies.UniqAppendProxyList(proxies)
+	}
+	if proxies == nil {
+		proxies = make(proxy.ProxyList, 0)
+	}
+
 	go func() {
 		wg.Wait()
 		close(pc)
 	}() // Note: 为何并发？可以一边抓取一边读取而非抓完再读
-	for node := range pc { // Note: pc关闭后不能发送数据可以读取剩余数据
-		if node != nil {
-			proxies = append(proxies, node)
+	// for 用于阻塞goroutine
+	for p := range pc { // Note: pc关闭后不能发送数据可以读取剩余数据
+		if p != nil {
+			proxies = proxies.UniqAppendProxy(p)
 		}
 	}
 
-	// 节点衍生并去重
-	proxies = proxies.Deduplication().Derive()
-	log.Println("CrawlGo unique node count:", len(proxies))
-	// 去除Clash(windows)不支持的节点
+	proxies = proxies.Derive()
+	log.Infoln("CrawlGo unique proxy count: %d", len(proxies))
+
+	// Clean Clash unsupported proxy because health check depends on clash
 	proxies = provider.Clash{
 		provider.Base{
 			Proxies: &proxies,
 		},
 	}.CleanProxies()
-	log.Println("CrawlGo clash supported node count:", len(proxies))
-	// 重命名节点名称为类似US_01的格式，并按国家排序
-	proxies.NameSetCounrty().Sort().NameAddIndex() //由于原作停更，暂不加.NameAddTG()，如被认为有版权问题请告知
-	log.Println("Proxy rename DONE!")
+	log.Infoln("CrawlGo clash supported proxy count: %d", len(proxies))
 
 	cache.SetProxies("allproxies", proxies)
 	cache.AllProxiesCount = proxies.Len()
-	log.Println("AllProxiesCount:", cache.AllProxiesCount)
+	log.Infoln("AllProxiesCount: %d", cache.AllProxiesCount)
 	cache.SSProxiesCount = proxies.TypeLen("ss")
-	log.Println("SSProxiesCount:", cache.SSProxiesCount)
+	log.Infoln("SSProxiesCount: %d", cache.SSProxiesCount)
 	cache.SSRProxiesCount = proxies.TypeLen("ssr")
-	log.Println("SSRProxiesCount:", cache.SSRProxiesCount)
+	log.Infoln("SSRProxiesCount: %d", cache.SSRProxiesCount)
 	cache.VmessProxiesCount = proxies.TypeLen("vmess")
-	log.Println("VmessProxiesCount:", cache.VmessProxiesCount)
+	log.Infoln("VmessProxiesCount: %d", cache.VmessProxiesCount)
 	cache.TrojanProxiesCount = proxies.TypeLen("trojan")
-	log.Println("TrojanProxiesCount:", cache.TrojanProxiesCount)
+	log.Infoln("TrojanProxiesCount: %d", cache.TrojanProxiesCount)
 	cache.LastCrawlTime = time.Now().In(location).Format("2006-01-02 15:04:05")
 
-	// 节点可用性检测并存储
-	log.Println("Now proceed proxy health check...")
-	proxies = proxy.CleanBadProxiesWithGrpool(proxies)
-	log.Println("CrawlGo clash usable node count:", len(proxies))
-	proxies.NameReIndex()                //由于原作停更，暂不加.NameAddTG()，如被认为有版权问题请告知
-	cache.SetProxies("proxies", proxies) //存放可用的节点到程序的缓存中
-	cache.UsefullProxiesCount = proxies.Len()
+	// 节点可用性检测，使用batchsize不能降低内存占用，只是为了看性能
+	log.Infoln("Now proceed proxy health check...")
+	b := 1000
+	round := len(proxies) / b
+	okproxies := make(proxy.ProxyList, 0)
+	for i := 0; i < round; i++ {
+		okproxies = append(okproxies, healthcheck.CleanBadProxiesWithGrpool(proxies[i*b:(i+1)*b])...)
+		log.Infoln("\tChecking round: %d", i)
+	}
+	okproxies = append(okproxies, healthcheck.CleanBadProxiesWithGrpool(proxies[round*b:])...)
+	proxies = okproxies
 
-	// 可用节点存储到数据库
+	log.Infoln("CrawlGo clash usable proxy count: %d", len(proxies))
+
+	// 重命名节点名称为类似US_01的格式，并按国家排序
+	proxies.NameSetCounrty().Sort().NameAddIndex()
+	log.Infoln("Proxy rename DONE!")
+
+	// 可用节点存储
+	cache.SetProxies("proxies", proxies)
+	cache.UsefullProxiesCount = proxies.Len()
 	database.SaveProxyList(proxies)
 	database.ClearOldItems()
 
+	log.Infoln("Usablility checking done. Open %s to check", config.Config.Domain+":"+config.Config.Port)
+
+	// 测速
+	speedTestNew(proxies)
 	cache.SetString("clashproxies", provider.Clash{
 		provider.Base{
 			Proxies: &proxies,
 		},
-	}.Provide())
+	}.Provide()) // update static string provider
 	cache.SetString("surgeproxies", provider.Surge{
 		provider.Base{
 			Proxies: &proxies,
 		},
 	}.Provide())
+}
+
+// Speed test for new proxies
+func speedTestNew(proxies proxy.ProxyList) {
+	if config.Config.SpeedTest {
+		cache.IsSpeedTest = "已开启"
+		if config.Config.Timeout > 0 {
+			healthcheck.SpeedTimeout = time.Second * time.Duration(config.Config.Timeout)
+		}
+		healthcheck.SpeedTestNew(proxies, config.Config.Connection)
+	} else {
+		cache.IsSpeedTest = "未开启"
+	}
+}
+
+// Speed test for all proxies in proxy.ProxyList
+func SpeedTest(proxies proxy.ProxyList) {
+	if config.Config.SpeedTest {
+		cache.IsSpeedTest = "已开启"
+		if config.Config.Timeout > 0 {
+			healthcheck.SpeedTimeout = time.Second * time.Duration(config.Config.Timeout)
+		}
+		healthcheck.SpeedTestAll(proxies, config.Config.Connection)
+	} else {
+		cache.IsSpeedTest = "未开启"
+	}
 }

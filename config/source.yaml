@@ -20,9 +20,9 @@
     num: 200
 
 # 翻墙党论坛抓取
-#- type: web-fanqiangdang
-#  options:
-#    url: https://fanqiangdang.com/forum-48-1.html
+- type: web-fanqiangdang
+  options:
+    url: https://fanqiangdang.com/forum-48-1.html
 
 # clash格式订阅链接
 - type: clash
@@ -30,5 +30,5 @@
     url: https://raw.githubusercontent.com/du5/free/master/file/0909/Clash.yaml
 
 # 某个网站抓取
-#- type: web-freessrxyz
-#  options:
+- type: web-freessrxyz
+  options:
